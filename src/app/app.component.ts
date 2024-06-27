@@ -1,17 +1,13 @@
-import { Component } from "@angular/core";
-import { RouterOutlet } from "@angular/router";
+import { ChangeDetectionStrategy, Component } from "@angular/core";
+import { Experience } from "./experience";
 
 @Component({
 	selector: "app-root",
 	standalone: true,
-	imports: [RouterOutlet],
 	template: `
-		<h1>Welcome to {{ title }}!</h1>
-
-		<router-outlet />
+		<app-experience />
 	`,
-	styles: [],
+	imports: [Experience],
+	changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class AppComponent {
-	title = "ngt-perf";
-}
+export class AppComponent {}
