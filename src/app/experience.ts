@@ -19,7 +19,7 @@ import {
 	extend,
 	injectBeforeRender,
 	injectLoader,
-	injectNgtStore,
+	injectStore,
 } from "angular-three";
 import * as THREE from "three";
 import {
@@ -227,7 +227,7 @@ export class Blocks {
 
 	change = signal(false);
 
-	store = injectNgtStore();
+	store = injectStore();
 	width = this.store.select("viewport", "width");
 
 	size = computed(() => this.width() / ROW);
