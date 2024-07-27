@@ -22,6 +22,7 @@
 		"angular-three": "^2.0.0-beta.270",
 		"ngxtension": "^4.0.0",
 		"rxjs": "~7.8.1",
+		"stats-gl": "^2.2.8",
 		"three": "^0.167.0",
 		"three-stdlib": "^2.30.5",
 		"tslib": "^2.6.3",

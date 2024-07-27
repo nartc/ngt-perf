@@ -1,3 +1,4 @@
+import { DOCUMENT } from "@angular/common";
 import {
 	CUSTOM_ELEMENTS_SCHEMA,
 	ChangeDetectionStrategy,
@@ -12,15 +13,18 @@ import {
 	signal,
 	viewChild,
 } from "@angular/core";
+import { RxStrategyProvider } from "@rx-angular/cdk/render-strategies";
 import { RxFor } from "@rx-angular/template/for";
 import { RxIf } from "@rx-angular/template/if";
 import {
+	NgtArgs,
 	NgtCanvas,
 	extend,
 	injectBeforeRender,
 	injectLoader,
 	injectStore,
 } from "angular-three";
+import Stats from "stats-gl";
 import * as THREE from "three";
 import {
 	Color,
@@ -41,38 +45,22 @@ const vec = new Color();
 const chars = `!"§$%&/()=?*#<>-_.:,;+0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz`;
 const SEGMENTS = 80;
 
-const useRxAngular = signal(false);
-
 @Component({
 	selector: "app-text",
 	standalone: true,
 	template: `
 		<ngt-group [scale]="[0.5, 0.5, 0.1]">
-			@if (useRxAngular()) {
-				<ngt-mesh
-					*rxIf="geom() as geometry"
-					#mesh
-					[geometry]="geometry"
-					[rotation]="[0, -0.5, 0]"
-				>
-					<ngt-mesh-standard-material color="#303030" />
-				</ngt-mesh>
-			} @else {
-				@if (geom(); as geometry) {
-					<ngt-mesh #mesh [geometry]="geometry" [rotation]="[0, -0.5, 0]">
-						<ngt-mesh-standard-material color="#303030" />
-					</ngt-mesh>
-				}
-			}
+			<ngt-mesh #mesh [rotation]="[0, -0.5, 0]">
+				<ngt-primitive *args="[geom()]" attach="geometry" />
+				<ngt-mesh-standard-material color="#303030" />
+			</ngt-mesh>
 		</ngt-group>
 	`,
-	imports: [RxIf],
+	imports: [NgtArgs],
 	changeDetection: ChangeDetectionStrategy.OnPush,
 	schemas: [CUSTOM_ELEMENTS_SCHEMA],
 })
 export class Text {
-	useRxAngular = useRxAngular;
-
 	text = input.required<string>();
 	font = injectLoader(
 		() => FontLoader,
@@ -99,6 +87,8 @@ export class Text {
 
 	constructor() {
 		const injector = inject(Injector);
+		const strategyProvider = inject(RxStrategyProvider);
+
 		afterNextRender(() => {
 			effect(
 				() => {
@@ -107,11 +97,14 @@ export class Text {
 
 					// track
 					this.text();
-					const size = new Vector3();
-					mesh.geometry.computeBoundingBox();
-					mesh.geometry.boundingBox?.getSize(size);
-					mesh.position.x = -size.x / 2;
-					mesh.position.y = -size.y / 2;
+
+					strategyProvider.schedule(() => {
+						const size = new Vector3();
+						mesh.geometry.computeBoundingBox();
+						mesh.geometry.boundingBox?.getSize(size);
+						mesh.position.x = -size.x / 2;
+						mesh.position.y = -size.y / 2;
+					});
 				},
 				{ injector },
 			);
@@ -125,13 +118,8 @@ export class Text {
 	template: `
 		<ngt-mesh [position]="position()" [scale]="scale()" [geometry]="geometry">
 			<ngt-mesh-basic-material #material />
-			@if (useRxAngular()) {
-				<app-text *rxIf="char() as text" [text]="text" />
-			} @else {
-				@if (char(); as text) {
-					<app-text [text]="text" />
-				}
-			}
+			<app-text *rxIf="char() as text" [text]="text" />
+			<!--			<app-text [text]="char()" />-->
 		</ngt-mesh>
 	`,
 	imports: [Text, RxIf],
@@ -139,8 +127,6 @@ export class Text {
 	changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class Block {
-	useRxAngular = useRxAngular;
-
 	position = input([0, 0, 0]);
 	scale = input([1, 1, 1]);
 	change = input(false);
@@ -153,6 +139,8 @@ export class Block {
 
 	setRandomChar() {
 		this.char.set(chars[Math.floor(Math.random() * chars.length)]);
+		const material = this.material().nativeElement;
+		material.color.set("red");
 	}
 
 	constructor() {
@@ -162,19 +150,11 @@ export class Block {
 				() => {
 					// track
 					this.change();
+					// NOTE: effect schedules a microtask but this work is scheduled in the next frame
+					// with setTimeout already, it's ok
 					setTimeout(this.setRandomChar.bind(this), Math.random() * 1000);
-					// this.setRandomChar();
 				},
 				{ injector, allowSignalWrites: true },
-			);
-
-			effect(
-				() => {
-					this.char();
-					const material = this.material().nativeElement;
-					material.color.set("red");
-				},
-				{ injector },
 			);
 
 			injectBeforeRender(
@@ -192,18 +172,6 @@ export class Block {
 	selector: "app-blocks",
 	standalone: true,
 	template: `
-		<!--
-		<app-block
-			*rxFor="let i of amount"
-			[position]="[
-				left() + (i % ROW) * size(),
-				top() + Math.floor(i / ROW) * -size(),
-				0,
-			]"
-			[scale]="[size(), size(), size()]"
-			[change]="change()"
-		/>
-        -->
 		@for (i of amount; track i) {
 			<app-block
 				[position]="[
@@ -286,24 +254,28 @@ export class Dolly {
 	changeDetection: ChangeDetectionStrategy.OnPush,
 	schemas: [CUSTOM_ELEMENTS_SCHEMA],
 })
-export class Scene {}
+export class Scene {
+	stats = new Stats();
+
+	constructor() {
+		const document = inject(DOCUMENT);
+		this.stats.dom.style.width = "100%";
+		document.body.appendChild(this.stats.dom);
+
+		const store = injectStore();
+		this.stats.init(store.snapshot.gl);
+
+		injectBeforeRender(() => {
+			this.stats.update();
+		});
+	}
+}
 
 @Component({
 	selector: "app-experience",
 	standalone: true,
 	template: `
 		<ngt-canvas [sceneGraph]="scene" [camera]="{ position: [0, 0, 100] }" />
-		<div
-			style="position: absolute; top: 1rem; right: 1rem; padding: 1rem; border: 1px solid black; border-radius: 0.25rem; background: #bebebe"
-		>
-			<label for="concurrent">Use Rx Angular (concurrent)</label>
-			<input
-				type="checkbox"
-				id="concurrent"
-				[checked]="useRxAngular()"
-				(change)="onChange($event)"
-			/>
-		</div>
 	`,
 	imports: [NgtCanvas],
 	changeDetection: ChangeDetectionStrategy.OnPush,
@@ -316,10 +288,4 @@ export class Scene {}
 })
 export class Experience {
 	scene = Scene;
-	useRxAngular = useRxAngular;
-
-	onChange(event: Event) {
-		const target = event.target as HTMLInputElement;
-		useRxAngular.set(target.checked);
-	}
 }
